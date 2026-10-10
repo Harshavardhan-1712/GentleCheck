@@ -5,10 +5,10 @@ Privacy-first daily care companion for older adults living independently. The pa
 
 ## Features
 - Parent mode: "I'm doing okay" check-in, 6 demo routines (medication, meal, hydration, movement, family call, custom) with complete/snooze, "I need help", sharing summary.
-- Family mode: last check-in, next due + status, routine status, activity timeline, follow-up notifications, consent status, demo clock controls, grace period.
+- Family mode: last check-in, next due + status, routine status, activity timeline, follow-up notifications, consent status, demo clock controls, grace period; add, edit and remove reminders created in family mode while routine sharing is enabled.
 - Settings: English/Telugu, parent-controlled consent (check-ins, routines, per routine), grace period, demo reset with confirmation.
 - FastAPI + SQLite (persistent), deterministic escalation (max one per due check-in), consent enforced in backend responses.
-- **The Parent/Family switch is a demo mechanism, not authentication.** Family-facing API calls are just `?role=family`.
+- **The Parent/Family switch is a demo mechanism, not authentication or production authorization.** Family-facing API calls are just `?role=family`; family-created reminder management is likewise demo-only.
 - Notifications are **simulated**. Nothing is sent by SMS, email or phone. Medication text only repeats what the user typed; the app never suggests medicines or doses.
 
 ## Prerequisites (Windows)
@@ -34,7 +34,7 @@ npm run dev
 - Swagger: http://localhost:8000/docs
 
 Tests / build: `cd backend; pytest` and `cd frontend; npm run build`.
-Optional config: see `.env.example` (`$env:CORS_ORIGINS="..."`; frontend uses `frontend/.env` for `VITE_API_URL`).
+Optional config: see `.env.example`. Set `FRONTEND_ORIGINS` on the backend to a comma-separated list of exact frontend origins. The default allows the local Vite origins and `https://gentle-check.vercel.app`; origins must not include a trailing slash. CORS credentials are disabled. For local development, leave this variable unset or include the localhost entries when setting it. On Vercel, set `VITE_API_URL` to the deployed FastAPI base URL; configure `FRONTEND_ORIGINS` in the FastAPI host environment to include `https://gentle-check.vercel.app`.
 
 ## Demo walkthrough
 1. Parent mode → **I'm doing okay**. Switch to Family → check-in and timeline appear.
@@ -87,8 +87,8 @@ Tests: `cd frontend; npm run test:voice` (command matching, English and Telugu).
 ## Troubleshooting
 - `Activate.ps1 cannot be loaded`: `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned`.
 - "Cannot reach the GentleCheck server": backend isn't running on port 8000 or `VITE_API_URL` differs.
-- CORS error: frontend must run on 5173 or add its origin to `CORS_ORIGINS`.
-- Port busy: use `--port 8001` and set `VITE_API_URL=http://localhost:8001`, plus matching CORS.
+- CORS error: add the frontend's exact origin to the backend's comma-separated `FRONTEND_ORIGINS`.
+- Port busy: use `--port 8001` and set `VITE_API_URL=http://localhost:8001`, plus the matching frontend origin in `FRONTEND_ORIGINS`.
 - Stale data: Settings → Reset demo data, or delete `backend/gentlecheck.db`.
 
 ## Limitations / future work

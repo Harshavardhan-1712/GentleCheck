@@ -16,6 +16,7 @@ async function req<T>(path: string, method = 'GET', body?: unknown): Promise<T> 
     throw new ApiError('network', 0)
   }
   if (!r.ok) throw new ApiError('http', r.status)
+  if (r.status === 204) return undefined as T
   return r.json() as Promise<T>
 }
 
@@ -23,6 +24,8 @@ export const api = {
   dashboard: (role: Role) => req<Dashboard>(`/api/dashboard?role=${role}`),
   routines: (role: Role) => req<Routine[]>(`/api/routines?role=${role}`),
   addRoutine: (body: { title: string; scheduled: string }) => req<Routine>('/api/routines', 'POST', body),
+  updateRoutine: (id: number, body: { title: string; scheduled: string }) => req<Routine>(`/api/routines/${id}`, 'PATCH', body),
+  deleteRoutine: (id: number) => req<void>(`/api/routines/${id}`, 'DELETE'),
   timeline: (role: Role) => req<TimelineItem[]>(`/api/timeline?role=${role}`),
   consent: () => req<Consent>('/api/consent'),
   putConsent: (b: ConsentUpdate) => req<Consent>('/api/consent', 'PUT', b),

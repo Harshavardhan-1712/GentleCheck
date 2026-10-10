@@ -1,5 +1,6 @@
 import { CalendarClock, CheckCircle2, ListChecks, Siren } from 'lucide-react'
 import { useState } from 'react'
+import type { FormEvent } from 'react'
 import { api, useApi } from '../api'
 import ConsentPanel from '../components/ConsentPanel'
 import NotificationPanel from '../components/NotificationPanel'
@@ -7,7 +8,7 @@ import RoutineCard from '../components/RoutineCard'
 import StatCard from '../components/StatCard'
 import { ErrorBox, errKey, Loading, Toast } from '../components/State'
 import Timeline from '../components/Timeline'
-import { fmtDateTime, useLang, useT } from '../i18n'
+import { fmtDateTime, pick, useLang, useT } from '../i18n'
 
 const GRACES = [1, 5, 15, 30, 60, 120]
 
@@ -21,13 +22,45 @@ export default function FamilyDashboard() {
   const [busy, setBusy] = useState(false)
   const [routineTitle, setRoutineTitle] = useState('')
   const [routineTime, setRoutineTime] = useState('')
+  const [editingRoutineId, setEditingRoutineId] = useState<number | null>(null)
   const reloadAll = () => Promise.all([dash.reload(), tl.reload(), rs.reload()])
 
-  const run = async (fn: () => Promise<unknown>, ok: (r: any) => string) => { // eslint-disable-line @typescript-eslint/no-explicit-any
+  const run = async <T,>(fn: () => Promise<T>, ok: (r: T) => string) => {
     setBusy(true)
     try { const r = await fn(); setMsg({ ok: true, text: ok(r) }); await reloadAll(); return true }
     catch (e) { setMsg({ ok: false, text: t(errKey(e)) }); return false }
     finally { setBusy(false) }
+  }
+
+  const editRoutine = (id: number) => {
+    const routine = rs.data?.find((item) => item.id === id)
+    if (!routine) return
+    setRoutineTitle(pick(lang, routine))
+    setRoutineTime(routine.scheduled)
+    setEditingRoutineId(id)
+  }
+
+  const cancelRoutineEdit = () => {
+    setEditingRoutineId(null)
+    setRoutineTitle('')
+    setRoutineTime('')
+  }
+
+  const saveRoutine = async (e: FormEvent<HTMLFormElement>) => {
+    e.preventDefault()
+    const title = routineTitle.trim()
+    if (!title || !routineTime) return
+    const saved = editingRoutineId === null
+      ? await run(() => api.addRoutine({ title, scheduled: routineTime }), () => t('routine.added'))
+      : await run(() => api.updateRoutine(editingRoutineId, { title, scheduled: routineTime }), () => t('routine.updated'))
+    if (saved) cancelRoutineEdit()
+  }
+
+  const removeRoutine = async (id: number) => {
+    const routine = rs.data?.find((item) => item.id === id)
+    if (!routine || !window.confirm(t('routine.delete.confirm', { title: routine.title_en }))) return
+    const deleted = await run(() => api.deleteRoutine(id), () => t('routine.deleted'))
+    if (deleted && editingRoutineId === id) cancelRoutineEdit()
   }
 
   const err = dash.error ?? tl.error ?? rs.error
@@ -59,22 +92,31 @@ export default function FamilyDashboard() {
             {rs.data.length === 0 ? <p className="card muted center">{t('routines.empty')}</p> : (
               <>
                 <p className="muted">{t('counts', { d: d.routine_counts.done, p: d.routine_counts.pending, s: d.routine_counts.snoozed })}</p>
-                <ul className="plain stack">{rs.data.map((r) => <RoutineCard key={r.id} r={r} />)}</ul>
+                <ul className="plain stack">{rs.data.map((r) => (
+                  <RoutineCard
+                    key={r.id}
+                    r={r}
+                    busy={busy}
+                    onEdit={r.family_created ? () => editRoutine(r.id) : undefined}
+                    onDelete={r.family_created ? () => void removeRoutine(r.id) : undefined}
+                  />
+                ))}</ul>
               </>
             )}
-            <form className="card routine-form" onSubmit={(e) => {
-              e.preventDefault()
-              void run(() => api.addRoutine({ title: routineTitle, scheduled: routineTime }), () => t('routine.added'))
-                .then((saved) => { if (saved) { setRoutineTitle(''); setRoutineTime('') } })
-            }}>
-              <h3>{t('routine.add.title')}</h3>
-              <label className="field">{t('routine.name')}
-                <input required maxLength={120} value={routineTitle} onChange={(e) => setRoutineTitle(e.target.value)} />
+            <form className="card routine-form" onSubmit={saveRoutine} aria-busy={busy}>
+              <h3>{t(editingRoutineId === null ? 'routine.add.title' : 'routine.edit.title')}</h3>
+              <label className="field" htmlFor="family-routine-name">{t('routine.name')}
+                <input id="family-routine-name" required maxLength={120} value={routineTitle} onChange={(e) => setRoutineTitle(e.target.value)} />
               </label>
-              <label className="field">{t('routine.time')}
-                <input required type="time" value={routineTime} onChange={(e) => setRoutineTime(e.target.value)} />
+              <label className="field" htmlFor="family-routine-time">{t('routine.time')}
+                <input id="family-routine-time" required type="time" value={routineTime} onChange={(e) => setRoutineTime(e.target.value)} />
               </label>
-              <button className="btn primary" type="submit" disabled={busy || !routineTitle.trim() || !routineTime}>{t('routine.add.button')}</button>
+              <div className="actions">
+                <button className="btn primary" type="submit" disabled={busy || !routineTitle.trim() || !routineTime} aria-live="polite">
+                  {busy ? t('routine.saving') : t(editingRoutineId === null ? 'routine.add.button' : 'routine.save')}
+                </button>
+                {editingRoutineId !== null && <button className="btn" type="button" disabled={busy} onClick={cancelRoutineEdit}>{t('routine.cancel')}</button>}
+              </div>
             </form>
           </>}
       </section>

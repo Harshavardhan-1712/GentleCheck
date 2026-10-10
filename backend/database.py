@@ -52,6 +52,9 @@ def seed(c):
 def init_db():
     with connect() as c:
         c.executescript(models.SCHEMA)
+        routine_columns = {r["name"] for r in c.execute("PRAGMA table_info(routines)")}
+        if "family_created" not in routine_columns:
+            c.execute("ALTER TABLE routines ADD COLUMN family_created INTEGER NOT NULL DEFAULT 0")
         if c.execute("SELECT COUNT(*) FROM state").fetchone()[0] == 0:
             seed(c)
 

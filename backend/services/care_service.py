@@ -57,7 +57,8 @@ def _routine(r, n, role):
     if st == "snoozed" and r["snoozed_until"] and db.parse(r["snoozed_until"]) <= n:
         st = "pending"  # snooze elapsed
     d = {"id": r["id"], "kind": r["kind"], "title_en": r["title_en"], "title_te": r["title_te"], "scheduled": r["scheduled"],
-         "status": st, "snoozed_until": r["snoozed_until"] if st == "snoozed" else None, "share": bool(r["share"])}
+         "status": st, "snoozed_until": r["snoozed_until"] if st == "snoozed" else None, "share": bool(r["share"]),
+         "family_created": bool(r["family_created"])}
     if role == "parent":  # user-entered details (e.g. medication notes) are never sent to family
         d["detail"] = r["detail"]
     return d
@@ -75,11 +76,30 @@ def add_routine(c, title, scheduled):
     if not get_consent(c)["share_routines"]:
         raise PermissionError("routine sharing is disabled")
     cur = c.execute(
-        "INSERT INTO routines(kind,title_en,title_te,scheduled,share) VALUES('custom',?,?,?,1)",
+        "INSERT INTO routines(kind,title_en,title_te,scheduled,share,family_created) VALUES('custom',?,?,?,1,1)",
         (title, title, scheduled),
     )
     add_event(c, "routine", "routine_added", cur.lastrowid)
     return _routine(_get_routine(c, cur.lastrowid), db.now(c), "family")
+
+
+def update_family_routine(c, rid, title, scheduled):
+    r = _get_routine(c, rid)
+    if not r["family_created"]:
+        raise PermissionError("only family-added reminders can be edited")
+    if not get_consent(c)["share_routines"]:
+        raise PermissionError("routine sharing is disabled")
+    c.execute("UPDATE routines SET title_en=?,title_te=?,scheduled=? WHERE id=?", (title, title, scheduled, rid))
+    add_event(c, "routine", "routine_updated", rid)
+    return _routine(_get_routine(c, rid), db.now(c), "family")
+
+
+def delete_family_routine(c, rid):
+    r = _get_routine(c, rid)
+    if not r["family_created"]:
+        raise PermissionError("only family-added reminders can be deleted")
+    c.execute("DELETE FROM events WHERE routine_id=?", (rid,))
+    c.execute("DELETE FROM routines WHERE id=?", (rid,))
 
 
 def _get_routine(c, rid):

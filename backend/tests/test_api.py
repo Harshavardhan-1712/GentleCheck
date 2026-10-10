@@ -1,3 +1,5 @@
+import sqlite3
+
 import pytest
 from fastapi.testclient import TestClient
 
@@ -23,8 +25,50 @@ def test_health_and_seed(client):
     assert client.get("/api/dashboard").json()["last_checkin"] is None
 
 
+def test_database_migrates_existing_routines_for_family_management(tmp_path, monkeypatch):
+    path = tmp_path / "legacy.db"
+    with sqlite3.connect(path) as legacy:
+        legacy.execute(
+            """CREATE TABLE routines(
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                kind TEXT NOT NULL,
+                title_en TEXT NOT NULL,
+                title_te TEXT NOT NULL,
+                detail TEXT,
+                scheduled TEXT NOT NULL,
+                share INTEGER NOT NULL DEFAULT 1,
+                status TEXT NOT NULL DEFAULT 'pending',
+                snoozed_until TEXT
+            )"""
+        )
+        legacy.execute(
+            "INSERT INTO routines(id,kind,title_en,title_te,scheduled) VALUES(1,'custom','Existing','Existing','09:00')"
+        )
+
+    monkeypatch.setenv("GENTLECHECK_DB", str(path))
+    db.init_db()
+
+    with sqlite3.connect(path) as migrated:
+        columns = {row[1] for row in migrated.execute("PRAGMA table_info(routines)")}
+        old_routine = migrated.execute(
+            "SELECT title_en,family_created FROM routines WHERE id=1"
+        ).fetchone()
+
+    assert "family_created" in columns
+    assert old_routine == ("Existing", 0)
+
+
 @pytest.mark.parametrize("path", ["/api/dashboard?role=parent", "/api/routines?role=parent"])
-@pytest.mark.parametrize("origin", ["http://localhost:5173", "http://localhost:5174"])
+@pytest.mark.parametrize(
+    "origin",
+    [
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+        "http://localhost:5174",
+        "http://127.0.0.1:5174",
+        "https://gentle-check.vercel.app",
+    ],
+)
 def test_cors_preflight_for_read_endpoints(client, path, origin):
     response = client.options(
         path,
@@ -70,8 +114,48 @@ def test_add_custom_routine(client):
     assert response.json()["title_te"] == "Take a walk"
     assert response.json()["scheduled"] == "16:30"
     assert "detail" not in response.json()
+    assert response.json()["family_created"] is True
     assert response.json()["id"] in [r["id"] for r in fam(client, "routines")]
     assert fam(client, "timeline")[0]["code"] == "routine_added"
+
+
+def test_family_can_edit_and_delete_only_its_own_reminders(client):
+    created = client.post("/api/routines", json={"title": "Take a walk", "scheduled": "16:30"}).json()
+    routine_id = created["id"]
+
+    updated = client.patch(
+        f"/api/routines/{routine_id}",
+        json={"title": "Evening walk", "scheduled": "17:00"},
+    )
+    assert updated.status_code == 200
+    assert updated.json()["title_en"] == "Evening walk"
+    assert updated.json()["scheduled"] == "17:00"
+    assert fam(client, "timeline")[0]["code"] == "routine_updated"
+
+    assert client.delete("/api/routines/1").status_code == 403
+    assert client.patch(
+        "/api/routines/1",
+        json={"title": "Changed seed", "scheduled": "16:30"},
+    ).status_code == 403
+    assert client.delete(f"/api/routines/{routine_id}").status_code == 204
+    assert routine_id not in [r["id"] for r in client.get("/api/routines").json()]
+    assert client.delete(f"/api/routines/{routine_id}").status_code == 404
+
+
+def test_edit_family_reminder_requires_routine_sharing_consent(client):
+    routine_id = client.post(
+        "/api/routines",
+        json={"title": "Take a walk", "scheduled": "16:30"},
+    ).json()["id"]
+    client.put("/api/consent", json={"share_routines": False})
+
+    response = client.patch(
+        f"/api/routines/{routine_id}",
+        json={"title": "Evening walk", "scheduled": "17:00"},
+    )
+
+    assert response.status_code == 403
+    assert fam(client, "routines") == []
 
 
 def test_add_custom_routine_requires_sharing_consent(client):

@@ -21,8 +21,25 @@ async def lifespan(app):
 
 
 app = FastAPI(title="GentleCheck API", version="1.0.0", lifespan=lifespan)
-app.add_middleware(CORSMiddleware, allow_origins=[o.strip() for o in os.environ.get("CORS_ORIGINS", "http://localhost:5173,http://127.0.0.1:5173,http://localhost:5174,http://127.0.0.1:5174").split(",")],
-                   allow_methods=["*"], allow_headers=["*"], allow_credentials=False)
+default_frontend_origins = (
+    "http://localhost:5173,"
+    "http://127.0.0.1:5173,"
+    "http://localhost:5174,"
+    "http://127.0.0.1:5174,"
+    "https://gentle-check.vercel.app"
+)
+frontend_origins = [
+    origin.strip()
+    for origin in os.environ.get("FRONTEND_ORIGINS", default_frontend_origins).split(",")
+    if origin.strip()
+]
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=frontend_origins,
+    allow_methods=["*"],
+    allow_headers=["*"],
+    allow_credentials=False,
+)
 
 
 @app.exception_handler(LookupError)
@@ -60,6 +77,24 @@ def add_routine(body: schemas.RoutineIn):
     try:
         with db.connect() as c:
             return care.add_routine(c, body.title, body.scheduled)
+    except PermissionError as e:
+        raise HTTPException(status_code=403, detail=str(e)) from e
+
+
+@app.patch("/api/routines/{routine_id}")
+def update_family_routine(routine_id: int, body: schemas.RoutineIn):
+    try:
+        with db.connect() as c:
+            return care.update_family_routine(c, routine_id, body.title, body.scheduled)
+    except PermissionError as e:
+        raise HTTPException(status_code=403, detail=str(e)) from e
+
+
+@app.delete("/api/routines/{routine_id}", status_code=204)
+def delete_family_routine(routine_id: int):
+    try:
+        with db.connect() as c:
+            care.delete_family_routine(c, routine_id)
     except PermissionError as e:
         raise HTTPException(status_code=403, detail=str(e)) from e
 
