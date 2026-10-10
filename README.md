@@ -29,9 +29,9 @@ cd gentlecheck\frontend
 npm install
 npm run dev
 ```
-- App: http://localhost:5173
-- Health: http://localhost:8000/api/health
-- Swagger: http://localhost:8000/docs
+- App: https://gentle-check.vercel.app/
+- Health: https://gentlecheck.onrender.com/api/health
+- Swagger: https://gentlecheck.onrender.com/docs
 
 Tests / build: `cd backend; pytest` and `cd frontend; npm run build`.
 Optional config: see `.env.example`. Set `FRONTEND_ORIGINS` on the backend to a comma-separated list of exact frontend origins. The default allows the local Vite origins and `https://gentle-check.vercel.app`; origins must not include a trailing slash. CORS credentials are disabled. For local development, leave this variable unset or include the localhost entries when setting it. On Vercel, set `VITE_API_URL` to the deployed FastAPI base URL; configure `FRONTEND_ORIGINS` in the FastAPI host environment to include `https://gentle-check.vercel.app`.
